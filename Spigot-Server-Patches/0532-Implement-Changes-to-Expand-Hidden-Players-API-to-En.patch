@@ -1,0 +1,145 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Nesaak <52047222+Nesaak@users.noreply.github.com>
+Date: Tue, 7 Jul 2020 19:13:36 -0400
+Subject: [PATCH] Implement Changes to Expand Hidden Players API to Entities
+
+
+diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+index dcbda5b35ab4d44e6b1d6c34bb8763a7dd08e629..11aaf60588edd5f80b0bacf88be26d959c21e222 100644
+--- a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
++++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+@@ -1167,6 +1167,33 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+         hidePlayer0(plugin, player);
+     }
+ 
++    @Override
++    public void hideEntity(Plugin plugin, org.bukkit.entity.Entity entity) {
++        Validate.notNull(plugin, "Plugin cannot be null");
++        Validate.isTrue(plugin.isEnabled(), "Plugin attempted to hide entity while disabled");
++        Validate.notNull(entity, "hidden entity cannot be null");
++
++        if (getHandle().playerConnection == null) return;
++        if (entity instanceof Player) {
++            if (equals(entity)) return;
++
++            Set<WeakReference<Plugin>> hidingPlugins = hiddenPlayers.get(entity.getUniqueId());
++            if (hidingPlugins != null) {
++                // Some plugins are already hiding the entity. Just mark that this
++                // plugin wants the player hidden too and end.
++                hidingPlugins.add(getPluginWeakReference(plugin));
++                return;
++            }
++            hidingPlugins = new HashSet<>();
++            hidingPlugins.add(getPluginWeakReference(plugin));
++            hiddenPlayers.put(entity.getUniqueId(), hidingPlugins);
++
++            // Remove this player from the hidden player's EntityTrackerEntry
++            unregisterEntity(((CraftEntity) entity).getHandle());
++        }
++
++    }
++
+     private void hidePlayer0(@Nullable Plugin plugin, Player player) {
+         Validate.notNull(player, "hidden player cannot be null");
+         if (getHandle().playerConnection == null) return;
+@@ -1188,7 +1215,8 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+         EntityPlayer other = ((CraftPlayer) player).getHandle();
+         unregisterPlayer(other);
+     }
+-    private void unregisterPlayer(EntityPlayer other) {
++
++    private void unregisterEntity(Entity other) {
+         PlayerChunkMap tracker = ((WorldServer) entity.world).getChunkProvider().playerChunkMap;
+         // Paper end
+         PlayerChunkMap.EntityTracker entry = tracker.trackedEntities.get(other.getId());
+@@ -1196,6 +1224,15 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+             entry.clear(getHandle());
+         }
+ 
++        if (other instanceof EntityPlayer) {
++            // Remove the hidden player from this player user list, if they're on it
++            if (((EntityPlayer) other).sentListPacket) {
++                getHandle().playerConnection.sendPacket(new PacketPlayOutPlayerInfo(PacketPlayOutPlayerInfo.EnumPlayerInfoAction.REMOVE_PLAYER, (EntityPlayer) other));
++            }
++        }
++    }
++
++    private void unregisterPlayer(EntityPlayer other) {
+         // Remove the hidden player from this player user list, if they're on it
+         if (other.sentListPacket) {
+             getHandle().playerConnection.sendPacket(new PacketPlayOutPlayerInfo(PacketPlayOutPlayerInfo.EnumPlayerInfoAction.REMOVE_PLAYER, other));
+@@ -1216,6 +1253,32 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+         showPlayer0(plugin, player);
+     }
+ 
++    @Override
++    public void showEntity(Plugin plugin, org.bukkit.entity.Entity entity) {
++        Validate.notNull(plugin, "Plugin cannot be null");
++        // Don't require that plugin be enabled. A plugin must be allowed to call
++        // showPlayer during its onDisable() method.
++        Validate.notNull(entity, "shown player cannot be null");
++        if (getHandle().playerConnection == null) return;
++        if (equals(entity)) return;
++
++        Set<WeakReference<Plugin>> hidingPlugins = hiddenPlayers.get(entity.getUniqueId());
++        if (hidingPlugins == null) {
++            return; // Player isn't hidden
++        }
++        hidingPlugins.remove(getPluginWeakReference(plugin));
++        if (!hidingPlugins.isEmpty()) {
++            return; // Some other plugins still want the player hidden
++        }
++        hiddenPlayers.remove(entity.getUniqueId());
++
++        if (entity instanceof CraftPlayer) {
++            // Paper start
++            EntityPlayer other = ((CraftPlayer) entity).getHandle();
++            registerEntity(other);
++        }
++    }
++
+     private void showPlayer0(@Nullable Plugin plugin, Player player) {
+         Validate.notNull(player, "shown player cannot be null");
+         if (getHandle().playerConnection == null) return;
+@@ -1235,6 +1298,21 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+         EntityPlayer other = ((CraftPlayer) player).getHandle();
+         registerPlayer(other);
+     }
++
++    private void registerEntity(Entity other) {
++        PlayerChunkMap tracker = ((WorldServer) entity.world).getChunkProvider().playerChunkMap;
++        // Paper end
++
++        if (other instanceof EntityPlayer) {
++            getHandle().playerConnection.sendPacket(new PacketPlayOutPlayerInfo(PacketPlayOutPlayerInfo.EnumPlayerInfoAction.ADD_PLAYER, ((EntityPlayer) other)));
++        }
++
++        PlayerChunkMap.EntityTracker entry = tracker.trackedEntities.get(other.getId());
++        if (entry != null && !entry.trackedPlayers.contains(getHandle())) {
++            entry.updatePlayer(getHandle());
++        }
++    }
++
+     private void registerPlayer(EntityPlayer other) {
+         PlayerChunkMap tracker = ((WorldServer) entity.world).getChunkProvider().playerChunkMap;
+         // Paper end
+@@ -1249,8 +1327,8 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+     // Paper start
+     private void reregisterPlayer(EntityPlayer player) {
+         if (!hiddenPlayers.containsKey(player.getUniqueID())) {
+-            unregisterPlayer(player);
+-            registerPlayer(player);
++            unregisterEntity(player);
++            registerEntity(player);
+         }
+     }
+     public void setPlayerProfile(PlayerProfile profile) {
+@@ -1295,7 +1373,7 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+     }
+ 
+     @Override
+-    public boolean canSee(Player player) {
++    public boolean canSee(org.bukkit.entity.Entity player) {
+         return !hiddenPlayers.containsKey(player.getUniqueId());
+     }
+ 

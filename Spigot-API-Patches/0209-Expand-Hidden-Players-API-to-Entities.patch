@@ -1,0 +1,49 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Nesaak <52047222+Nesaak@users.noreply.github.com>
+Date: Tue, 7 Jul 2020 19:13:14 -0400
+Subject: [PATCH] Expand Hidden Players API to Entities
+
+
+diff --git a/src/main/java/org/bukkit/entity/Player.java b/src/main/java/org/bukkit/entity/Player.java
+index 787bb144b5918ef1e46d69cb72b84128d2b678f3..bc033ae1fae3e936d13139336e632e39f244f603 100644
+--- a/src/main/java/org/bukkit/entity/Player.java
++++ b/src/main/java/org/bukkit/entity/Player.java
+@@ -1047,6 +1047,14 @@ public interface Player extends HumanEntity, Conversable, OfflinePlayer, PluginM
+      */
+     public void hidePlayer(@NotNull Plugin plugin, @NotNull Player player);
+ 
++    /**
++     * Hides a player from this player
++     *
++     * @param plugin Plugin that wants to hide the player
++     * @param entity Player to hide
++     */
++    void hideEntity(Plugin plugin, Entity entity);
++
+     /**
+      * Allows this player to see a player that was previously hidden
+      *
+@@ -1066,6 +1074,14 @@ public interface Player extends HumanEntity, Conversable, OfflinePlayer, PluginM
+      */
+     public void showPlayer(@NotNull Plugin plugin, @NotNull Player player);
+ 
++    /**
++     * Hides a player from this player
++     *
++     * @param plugin Plugin that wants to hide the player
++     * @param entity Player to hide
++     */
++    void showEntity(Plugin plugin, Entity entity);
++
+     /**
+      * Checks to see if a player has been hidden from this player
+      *
+@@ -1073,7 +1089,7 @@ public interface Player extends HumanEntity, Conversable, OfflinePlayer, PluginM
+      * @return True if the provided player is not being hidden from this
+      *     player
+      */
+-    public boolean canSee(@NotNull Player player);
++    public boolean canSee(@NotNull Entity player);
+ 
+     /**
+      * Checks to see if this player is currently flying or not.
